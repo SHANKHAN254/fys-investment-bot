@@ -1,0 +1,14 @@
+{
+  "name": "fys-investment-bot",
+  "version": "1.0.0",
+  "description": "FY'S INVESTMENT BOT – A WhatsApp investment bot with user registration, investment options, referrals, deposits/withdrawals and an admin panel.",
+  "main": "main.js",
+  "scripts": {
+    "start": "node main.js"
+  },
+  "dependencies": {
+    "whatsapp-web.js": "^1.18.2",
+    "qrcode-terminal": "^0.12.0"
+  }
+}
+
