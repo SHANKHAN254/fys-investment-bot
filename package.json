@@ -1,7 +1,7 @@
 {
   "name": "fys-investment-bot",
-  "version": "2.1.0",
-  "description": "FY'S INVESTMENT BOT with WhatsApp referral links and QR code displayed via Express server.",
+  "version": "4.0.0",
+  "description": "FY'S INVESTMENT BOT – A supercharged WhatsApp investment bot with extra features and full admin control.",
   "main": "main.js",
   "scripts": {
     "start": "node main.js"
