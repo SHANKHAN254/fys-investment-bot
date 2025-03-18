@@ -24,7 +24,7 @@ let config = {
   provider: 'm-pesa',
   callback_url: 'https://example.com/callback.php',  // Update as needed
   auth_token_stk: 'Basic QklYOXY0WlR4RUV4ZUJSOG1EdDY6c2lYb09taHRYSlFMbWZ0dFdqeGp4SG13NDFTekJLckl2Z2NWd2F1aw==',
-  auth_token_status: 'Basic QklYOXY0WlR4RUV4ZUJSOG1EdDY6c2lYb09taHRYSlFMbWZ0dFdqeGp4SG13NDFTekJLckl2Z2NWd2F1aw==',
+  auth_token_status: 'Basic MWo5TjVkZTFwSGc2Rm03TXJ2YldKbjg4dXFhMHF6ZDMzUHlvNjJNUg==',
   payment_details: "Send money to 0701339573, Name: Camlus Okoth",
   deposit_min: 1,         // Minimum deposit amount is 1
   deposit_max: 75000,     // Maximum deposit amount is 75,000
@@ -141,7 +141,18 @@ client.on('message', async (message) => {
   if (message.body.toLowerCase().startsWith('admin')) {
     if (isSenderAdmin) {
       session.state = 'admin_main';
-      client.sendMessage(sender, "👑 Welcome to Admin Panel!\nType:\n1. View Users\n2. View Transactions\n3. Update Payment Details\n4. Change Limits\n5. Add Admin\n6. Approve/Reject Withdrawals\n7. Ban User\nType 0 to exit Admin Panel.");
+      client.sendMessage(sender, 
+        "👑 Welcome to Admin Panel!\n" +
+        "Type:\n" +
+        "1. View Users\n" +
+        "2. View Transactions\n" +
+        "3. Update Payment Details\n" +
+        "4. Change Limits\n" +
+        "5. Add Admin\n" +
+        "6. Approve/Reject Withdrawals\n" +
+        "7. Ban User\n" +
+        "Type 0 to exit Admin Panel."
+      );
       return;
     } else {
       client.sendMessage(sender, "❌ You are not authorized as admin.");
@@ -163,10 +174,23 @@ client.on('message', async (message) => {
       // If user is registered, show main menu; otherwise, start registration.
       if (users[senderNumber]) {
         session.state = 'main_menu';
-        client.sendMessage(sender, `Welcome back ${users[senderNumber].first_name}! ${getKenyaTime()}\n\nMain Menu:\n1. Invest\n2. Check Balance\n3. Deposit Funds\n4. Withdraw Earnings\n5. Change PIN\nType the number of your choice.`);
+        client.sendMessage(sender, 
+          `Welcome back ${users[senderNumber].first_name}! ${getKenyaTime()}\n\n` +
+          "Main Menu:\n" +
+          "1. Invest\n" +
+          "2. Check Balance\n" +
+          "3. Deposit Funds\n" +
+          "4. Withdraw Earnings\n" +
+          "5. Change PIN\n" +
+          "Type the number of your choice."
+        );
       } else {
         session.state = 'register_first_name';
-        client.sendMessage(sender, `👋 Welcome to FY'S INVESTMENT BOT! ${getKenyaTime()}\nLet's get you registered.\nPlease enter your first name:`);
+        client.sendMessage(sender, 
+          `👋 Welcome to FY'S INVESTMENT BOT! ${getKenyaTime()}\n` +
+          "Let's get you registered.\n" +
+          "Please enter your first name:"
+        );
       }
       break;
 
@@ -213,7 +237,16 @@ client.on('message', async (message) => {
           banned: false
         };
         session.state = 'main_menu';
-        client.sendMessage(sender, `✅ Registration successful! Your referral code is ${referralCode}.\n${getKenyaTime()}\n\nMain Menu:\n1. Invest\n2. Check Balance\n3. Deposit Funds\n4. Withdraw Earnings\n5. Change PIN\nType the number of your choice.`);
+        client.sendMessage(sender, 
+          `✅ Registration successful! Your referral code is ${referralCode}.\n${getKenyaTime()}\n\n` +
+          "Main Menu:\n" +
+          "1. Invest\n" +
+          "2. Check Balance\n" +
+          "3. Deposit Funds\n" +
+          "4. Withdraw Earnings\n" +
+          "5. Change PIN\n" +
+          "Type the number of your choice."
+        );
       }
       break;
 
@@ -226,7 +259,10 @@ client.on('message', async (message) => {
           client.sendMessage(sender, "💼 Enter investment amount (Min: Ksh 1000, Max: Ksh 150000):");
         } else if (choice === '2') {
           let user = users[senderNumber];
-          let reply = `💰 Your current balance is: Ksh ${user.balance}.\n🔗 Your Referral Code: ${user.referral_code}\n👥 You have referred ${user.referrals.length} user(s).`;
+          let reply = 
+            `💰 Your current balance is: Ksh ${user.balance}.\n` +
+            `🔗 Your Referral Code: ${user.referral_code}\n` +
+            `👥 You have referred ${user.referrals.length} user(s).`;
           if (user.referrals.length > 0) {
             reply += "\nReferred users: " + user.referrals.map(ref => {
               return users[ref] ? (users[ref].first_name + " " + users[ref].second_name) : ref;
@@ -244,7 +280,9 @@ client.on('message', async (message) => {
           session.state = 'change_pin_current';
           client.sendMessage(sender, "🔒 Enter your current PIN:");
         } else {
-          client.sendMessage(sender, "❌ Invalid option. Please type the number of your choice from the main menu.");
+          client.sendMessage(sender, 
+            "❌ Invalid option. Please type the number of your choice from the main menu."
+          );
         }
       }
       break;
@@ -287,7 +325,10 @@ client.on('message', async (message) => {
           status: 'ONGOING'
         };
         user.investments.push(investment_id);
-        client.sendMessage(sender, `✅ Investment successful! You invested Ksh ${amount}. Expected return: 10% after 24 hours.\nInvestment ID: ${investment_id}.\n${getKenyaTime()} 😊`);
+        client.sendMessage(sender, 
+          `✅ Investment successful! You invested Ksh ${amount}. Expected return: 10% after 24 hours.\n` +
+          `Investment ID: ${investment_id}.\n${getKenyaTime()} 😊`
+        );
         session.state = 'main_menu';
       }
       break;
@@ -297,7 +338,10 @@ client.on('message', async (message) => {
       {
         let amount = parseFloat(message.body.trim());
         if (isNaN(amount) || amount < config.deposit_min || amount > config.deposit_max) {
-          client.sendMessage(sender, `⚠️ Deposit must be between Ksh ${config.deposit_min} and Ksh ${config.deposit_max}. Please enter a valid amount:`);
+          client.sendMessage(sender, 
+            `⚠️ Deposit must be between Ksh ${config.deposit_min} and Ksh ${config.deposit_max}. ` +
+            `Please enter a valid amount:`
+          );
           return;
         }
         session.deposit_amount = amount;
@@ -307,19 +351,25 @@ client.on('message', async (message) => {
         session.deposit_id = depositID;
         client.sendMessage(sender, `🔢 Your Deposit ID is: ${depositID}`);
         client.sendMessage(sender, "⏳ Sending STK push, please wait...");
+
         // Initiate STK push asynchronously
         (async () => {
           let user = users[senderNumber];
           let response = await sendStkPush(amount, user.phone, user.first_name + " " + user.second_name, depositID);
           let transaction_reference = response.reference || depositID;
           client.sendMessage(sender, "⏳ Processing payment... Please wait 20 seconds.");
+          
           setTimeout(async () => {
             let statusResponse = await checkTransactionStatus(transaction_reference);
             if (statusResponse.status && statusResponse.status === 'SUCCESS') {
               user.balance += amount;
-              client.sendMessage(sender, `✅ Deposit successful! Your account has been credited with Ksh ${amount}.\n${getKenyaTime()} 😊`);
+              client.sendMessage(sender, 
+                `✅ Deposit successful! Your account has been credited with Ksh ${amount}.\n${getKenyaTime()} 😊`
+              );
             } else {
-              client.sendMessage(sender, `❌ Deposit failed. Transaction status: ${statusResponse.status || 'UNKNOWN'}. Please try again.`);
+              client.sendMessage(sender, 
+                `❌ Deposit failed. Transaction status: ${statusResponse.status || 'UNKNOWN'}. Please try again.`
+              );
             }
             transactions[depositID] = {
               type: 'deposit',
@@ -329,6 +379,7 @@ client.on('message', async (message) => {
             };
           }, 20000);
         })();
+
         session.state = 'main_menu';
       }
       break;
@@ -338,7 +389,10 @@ client.on('message', async (message) => {
       {
         let amount = parseFloat(message.body.trim());
         if (isNaN(amount) || amount < config.withdrawal_min || amount > config.withdrawal_max) {
-          client.sendMessage(sender, `⚠️ Withdrawal must be between Ksh ${config.withdrawal_min} and Ksh ${config.withdrawal_max}. Please enter a valid amount:`);
+          client.sendMessage(sender, 
+            `⚠️ Withdrawal must be between Ksh ${config.withdrawal_min} and Ksh ${config.withdrawal_max}. ` +
+            `Please enter a valid amount:`
+          );
           return;
         }
         let user = users[senderNumber];
@@ -369,7 +423,10 @@ client.on('message', async (message) => {
           status: 'PENDING',
           date: getKenyaTime()
         };
-        client.sendMessage(sender, `✅ Withdrawal request submitted! Your Withdrawal ID is: ${withdrawalID}. It will be processed shortly.\n${getKenyaTime()} 😊`);
+        client.sendMessage(sender, 
+          `✅ Withdrawal request submitted! Your Withdrawal ID is: ${withdrawalID}. ` +
+          `It will be processed shortly.\n${getKenyaTime()} 😊`
+        );
         session.state = 'main_menu';
       }
       break;
@@ -403,7 +460,15 @@ client.on('message', async (message) => {
 
     default:
       session.state = 'main_menu';
-      client.sendMessage(sender, `Main Menu:\n1. Invest\n2. Check Balance\n3. Deposit Funds\n4. Withdraw Earnings\n5. Change PIN\nType the number of your choice.`);
+      client.sendMessage(sender, 
+        "Main Menu:\n" +
+        "1. Invest\n" +
+        "2. Check Balance\n" +
+        "3. Deposit Funds\n" +
+        "4. Withdraw Earnings\n" +
+        "5. Change PIN\n" +
+        "Type the number of your choice."
+      );
       break;
   }
 });
@@ -460,8 +525,13 @@ async function handleAdminCommands(message, session, adminNumber) {
             client.sendMessage(sender, "No pending withdrawal requests.");
           } else {
             session.state = 'admin_withdrawals';
-            session.pendingWithdrawals = Object.keys(transactions).filter(id => transactions[id].type === 'withdrawal' && transactions[id].status === 'PENDING');
-            client.sendMessage(sender, "Pending Withdrawals:\n" + pendingWithdrawals + "\nType the Withdrawal ID followed by A (approve) or R (reject), e.g., WD-1234A");
+            session.pendingWithdrawals = Object.keys(transactions).filter(id => 
+              transactions[id].type === 'withdrawal' && transactions[id].status === 'PENDING'
+            );
+            client.sendMessage(sender, 
+              "Pending Withdrawals:\n" + pendingWithdrawals + "\n" +
+              "Type the Withdrawal ID followed by A (approve) or R (reject), e.g., WD-1234A"
+            );
           }
         }
         break;
@@ -474,7 +544,17 @@ async function handleAdminCommands(message, session, adminNumber) {
         client.sendMessage(sender, "Exiting Admin Panel.");
         break;
       default:
-        client.sendMessage(sender, "❌ Invalid admin option. Please choose a valid option:\n1. View Users\n2. View Transactions\n3. Update Payment Details\n4. Change Limits\n5. Add Admin\n6. Approve/Reject Withdrawals\n7. Ban User\n0. Logout");
+        client.sendMessage(sender, 
+          "❌ Invalid admin option. Please choose a valid option:\n" +
+          "1. View Users\n" +
+          "2. View Transactions\n" +
+          "3. Update Payment Details\n" +
+          "4. Change Limits\n" +
+          "5. Add Admin\n" +
+          "6. Approve/Reject Withdrawals\n" +
+          "7. Ban User\n" +
+          "0. Logout"
+        );
         break;
     }
   } else if (session.state === 'admin_update_payment') {
@@ -516,7 +596,11 @@ async function handleAdminCommands(message, session, adminNumber) {
     // Expected input: e.g., WD-1234A or WD-1234R
     let withdrawalID = input.slice(0, input.length - 1);
     let decision = input.slice(-1).toUpperCase();
-    if (transactions[withdrawalID] && transactions[withdrawalID].type === 'withdrawal' && transactions[withdrawalID].status === 'PENDING') {
+    if (
+      transactions[withdrawalID] && 
+      transactions[withdrawalID].type === 'withdrawal' && 
+      transactions[withdrawalID].status === 'PENDING'
+    ) {
       if (decision === 'A') {
         transactions[withdrawalID].status = 'APPROVED';
         client.sendMessage(sender, `✅ Withdrawal ${withdrawalID} approved.`);
@@ -524,7 +608,9 @@ async function handleAdminCommands(message, session, adminNumber) {
         transactions[withdrawalID].status = 'REJECTED';
         client.sendMessage(sender, `❌ Withdrawal ${withdrawalID} rejected.`);
       } else {
-        client.sendMessage(sender, "⚠️ Invalid decision. Please append A (approve) or R (reject) to the ID.");
+        client.sendMessage(sender, 
+          "⚠️ Invalid decision. Please append A (approve) or R (reject) to the ID."
+        );
       }
     } else {
       client.sendMessage(sender, "⚠️ Withdrawal ID not found or not pending.");
@@ -548,7 +634,17 @@ async function handleAdminCommands(message, session, adminNumber) {
     }
   } else {
     session.state = 'admin_main';
-    client.sendMessage(sender, "Returning to Admin Main Menu. Type:\n1. View Users\n2. View Transactions\n3. Update Payment Details\n4. Change Limits\n5. Add Admin\n6. Approve/Reject Withdrawals\n7. Ban User\n0. Logout");
+    client.sendMessage(sender, 
+      "Returning to Admin Main Menu. Type:\n" +
+      "1. View Users\n" +
+      "2. View Transactions\n" +
+      "3. Update Payment Details\n" +
+      "4. Change Limits\n" +
+      "5. Add Admin\n" +
+      "6. Approve/Reject Withdrawals\n" +
+      "7. Ban User\n" +
+      "0. Logout"
+    );
   }
 }
 
