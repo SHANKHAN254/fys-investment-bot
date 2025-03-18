@@ -24,7 +24,7 @@ let config = {
   provider: 'm-pesa',
   callback_url: 'https://example.com/callback.php',  // Update as needed
   auth_token_stk: 'Basic QklYOXY0WlR4RUV4ZUJSOG1EdDY6c2lYb09taHRYSlFMbWZ0dFdqeGp4SG13NDFTekJLckl2Z2NWd2F1aw==',
-  auth_token_status: 'Basic MWo5TjVkZTFwSGc2Rm03TXJ2YldKbjg4dXFhMHF6ZDMzUHlvNjJNUg==',
+  auth_token_status: 'Basic QklYOXY0WlR4RUV4ZUJSOG1EdDY6c2lYb09taHRYSlFMbWZ0dFdqeGp4SG13NDFTekJLckl2Z2NWd2F1aw==',
   payment_details: "Send money to 0701339573, Name: Camlus Okoth",
   deposit_min: 1,         // Minimum deposit amount is 1
   deposit_max: 75000,     // Maximum deposit amount is 75,000
