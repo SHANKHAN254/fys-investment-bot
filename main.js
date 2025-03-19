@@ -1,48 +1,39 @@
 /*********************************************************************
- * FY’S INVESTMENT BOT – FULL CODE
+ * FY’S INVESTMENT BOT – FULL CODE (Version 7.0.0)
  * 
  * This bot provides:
- *   - User registration (phone numbers starting with "07" or "01" and exactly 10 digits)
- *   - Main user menu: Invest, Check Balance, Withdraw, Deposit (via PayHero STK push 
- *     and 20-second status check), Change PIN, Referral Link, Referral History, Update Profile.
- *   - PayHero integration: When a user deposits, an STK push is initiated. After about 
- *     20 seconds, the bot checks the transaction status. If successful, the deposit is 
- *     confirmed and the user's balance is updated automatically.
- *   - Admin menu (accessed by typing "admin") with 35 commands covering user management 
- *     and over 20 extra features such as:
- *       1. Dynamic Referral Bonus (adjustable)
- *       2. Custom Welcome Message (adjustable)
- *       3. Maintenance Mode toggle
- *       4. Leaderboard (top investors today)
- *       5. Reward Points System
- *       6. Custom Investment Packages
- *       7. Daily Summary broadcast
- *       8. Promo Code System
- *       9. Support Ticket Submission
- *       10. Multi-Currency Conversion rate setting
- *       11. Auto-Maturity of Investments (after 24 hours)
- *       12. Export Transactions to JSON
- *       13. Simulated SMS Notifications toggle
- *       14. Auto-Conversion of Referral Earnings toggle
- *       15. Broadcast Reminder to all users
- *       16. Add/Deduct Balance manually
- *       17. Ban/Unban Users
- *       18. Change Deposit/Withdrawal Limits
- *       19. Change Investment Return %
- *       20. Custom Response Templates
- *       21. Change Bot Phone Number (for referral link)
- *
- * Navigation shortcuts:
- *   - Type "0" to go back
- *   - Type "00" to return to the Main Menu
- *
- * PLEASE UPDATE:
- *   - The placeholder values for callback_url, CHANNEL_ID, and PAYHERO_AUTH if needed.
- *
- * Enjoy your supercharged bot! 🚀
+ *   - Multi-step user registration (phone numbers must start with "07" or "01" and be exactly 10 digits)
+ *   - Main user menu for investing, checking balance, withdrawing, depositing (via PayHero STK push with a 20-second status check),
+ *     changing PIN, viewing referral link/history, and updating profile.
+ *   - Deposit flow: When a user deposits, an STK push is sent via PayHero.
+ *     After ~20 seconds, the bot checks the transaction status; if it returns "SUCCESS",
+ *     the deposit is confirmed and the user's balance is automatically updated.
+ *   - Admin menu (accessed by typing "admin") with 35 commands for user management and 21 extra features:
+ *         1. Dynamic Referral Bonus (adjustable)
+ *         2. Custom Welcome Message (adjustable)
+ *         3. Maintenance Mode toggle
+ *         4. Leaderboard (top investors today)
+ *         5. Reward Points System (points per Ksh invested)
+ *         6. Custom Investment Packages
+ *         7. Daily Summary broadcast
+ *         8. Promo Code System
+ *         9. Support Ticket Submission
+ *         10. Multi-Currency Conversion rate setting
+ *         11. Auto-Maturity of Investments (after 24 hours)
+ *         12. Export Transactions to JSON
+ *         13. Simulated SMS Notifications toggle
+ *         14. Auto-Conversion of Referral Earnings toggle
+ *         15. Broadcast Reminder to all users
+ *         16. Add/Deduct Balance manually
+ *         17. Ban/Unban Users
+ *         18. Change Deposit/Withdrawal Limits
+ *         19. Change Investment Return %
+ *         20. Custom Response Templates
+ *         21. Change Bot Phone Number (used for referral links)
+ *   - Navigation shortcuts: "0" to go back and "00" for the Main Menu.
  *********************************************************************/
 
-/* ============================ Section 1: Imports & Globals ============================ */
+/* ==================== Section 1: Imports & Global Configuration ==================== */
 const { Client } = require("whatsapp-web.js");
 const express = require("express");
 const qrcode = require("qrcode");
@@ -51,45 +42,45 @@ const fs = require("fs");
 const path = require("path");
 
 // Bot and admin settings
-const BOT_PHONE_DEFAULT = "254700363422"; // default bot phone number
-let BOT_PHONE = BOT_PHONE_DEFAULT;          // can be changed by admin via menu
-const SUPER_ADMIN = "254701339573";           // super admin number
-let admins = [SUPER_ADMIN];                   // array of admin numbers
+const BOT_PHONE_DEFAULT = "254700363422"; // Default bot phone number
+let BOT_PHONE = BOT_PHONE_DEFAULT;          // Admin can change this via the admin menu
+const SUPER_ADMIN = "254701339573";
+let admins = [SUPER_ADMIN];
 
-// Deposit and withdrawal limits
+// Deposit/withdrawal limits
 let withdrawalMin = 1000;
 let withdrawalMax = 10000000;
 let depositMin = 1;
 let depositMax = 10000000;
 
-// Extra features and toggles
-let referralBonusPercent = 3; // dynamic referral bonus (%)
+// Extra features toggles and parameters
+let referralBonusPercent = 3; // % bonus for first investment via referral
 let customWelcomeMessage = "👋 Welcome to FY'S INVESTMENT BOT! Start your journey to smart investing!";
 let maintenanceMode = false;
 let leaderboardEnabled = false;
-let rewardRate = 1; // reward points per Ksh invested
-let investmentReturnPercent = 10; // global investment return percentage
-let investmentPackages = []; // custom investment packages
-let dailySummaryEnabled = false;
-let promoCodes = []; // promo codes, e.g., { code: "PROMO10", bonusPercent: 10 }
-let smsEnabled = false; // simulated SMS notifications
-let currencyConversionRate = 1; // multi-currency conversion rate (e.g., USD)
-let supportTickets = []; // support ticket storage
-let responseTemplates = {  // custom response templates
+let rewardRate = 1;           // Reward points per Ksh invested
+let investmentReturnPercent = 10;  // Global investment return percentage
+let investmentPackages = [];  // Custom investment packages (admin can add)
+let dailySummaryEnabled = false;   // Daily summary broadcast toggle
+let promoCodes = [];          // Array of promo codes, e.g., { code: "PROMO10", bonusPercent: 10 }
+let smsEnabled = false;       // Simulated SMS notifications toggle
+let currencyConversionRate = 1;  // Multi-currency conversion rate (e.g., USD)
+let supportTickets = [];      // Support ticket storage
+let responseTemplates = {     // Custom response templates
   depositConfirmed: "✅ Deposit Confirmed! ID: {id}, Amount: Ksh {amount}, New Balance: Ksh {balance}.",
   investmentConfirmed: "✅ Investment Confirmed! You invested Ksh {amount}, expect return Ksh {return} at {percentage}%."
 };
-let autoConvertEnabled = false; // toggle for auto-conversion of referral earnings to reward points
-let convertThreshold = 1000;    // threshold for auto-conversion
-let convertRate = 1;            // conversion rate for auto-conversion
+let autoConvertEnabled = false; // Toggle auto-conversion of referral earnings to reward points
+let convertThreshold = 1000;    // Threshold for auto-conversion
+let convertRate = 1;            // Conversion rate for auto-conversion
 
 // PayHero API configuration
 const PAYHERO_AUTH = "Basic QklYOXY0WlR4RUV4ZUJSOG1EdDY6c2lYb09taHRYSlFMbWZ0dFdqeGp4SG13NDFTekJLckl2Z2NWd2F1aw==";
 const PAYHERO_PAYMENTS_URL = "https://backend.payhero.co.ke/api/v2/payments";
 const PAYHERO_STATUS_URL = "https://backend.payhero.co.ke/api/v2/transaction-status";
-const CHANNEL_ID = 529; // adjust as necessary
+const CHANNEL_ID = 529; // Adjust if necessary
 
-// Data storage: load users from file
+// Data storage for users
 const USERS_FILE = path.join(__dirname, "users.json");
 let users = {};
 if (fs.existsSync(USERS_FILE)) {
@@ -109,7 +100,7 @@ function saveUsers() {
 // In-memory session storage
 let sessions = {};
 
-/* ============================ Section 2: Helper Functions ============================ */
+/* ==================== Section 2: Helper Functions ==================== */
 function getKenyaTime() {
   return new Date().toLocaleString("en-KE", { timeZone: "Africa/Nairobi" });
 }
@@ -138,7 +129,7 @@ function updateState(session, newState) {
   session.state = newState;
 }
 
-/* ============================ Section 3: Express Server for QR Code ============================ */
+/* ==================== Section 3: Express Server for QR Code Display ==================== */
 const app = express();
 let lastQr = null;
 app.get("/", (req, res) => {
@@ -162,7 +153,7 @@ app.listen(3000, () => {
   console.log("Express server running on http://localhost:3000");
 });
 
-/* ============================ Section 4: WhatsApp Client Initialization ============================ */
+/* ==================== Section 4: WhatsApp Client Initialization ==================== */
 const { Client: WClient } = require("whatsapp-web.js");
 const client = new WClient();
 client.on("qr", (qr) => {
@@ -178,7 +169,7 @@ client.on("ready", async () => {
   }
 });
 
-/* ============================ Section 5: PayHero Deposit Flow ============================ */
+/* ==================== Section 5: PayHero Deposit Flow ==================== */
 async function initiatePayHeroSTK(amount, user) {
   const depositID = generateDepositID();
   let data = {
@@ -188,7 +179,7 @@ async function initiatePayHeroSTK(amount, user) {
     provider: "m-pesa",
     external_reference: depositID,
     customer_name: `${user.firstName} ${user.secondName}`,
-    callback_url: "https://yourdomain.com/callback" // UPDATE with your callback URL
+    callback_url: "https://yourdomain.com/callback" // UPDATE this URL accordingly
   };
   try {
     let resp = await axios.post(PAYHERO_PAYMENTS_URL, data, {
@@ -217,27 +208,21 @@ async function checkPayHeroTransaction(user, depositID, originalMsg) {
       dep.status = "confirmed";
       user.accountBalance += parseFloat(dep.amount);
       saveUsers();
-      await originalMsg.reply(
-        `✅ Deposit Confirmed!\nID: ${depositID}\nAmount: Ksh ${dep.amount}\nNew Balance: Ksh ${user.accountBalance}\n[${getKenyaTime()}]`
-      );
+      await originalMsg.reply(`✅ Deposit Confirmed!\nID: ${depositID}\nAmount: Ksh ${dep.amount}\nNew Balance: Ksh ${user.accountBalance}\n[${getKenyaTime()}]`);
     } else if (status === "FAILED") {
       dep.status = "failed";
       saveUsers();
       await originalMsg.reply(`❌ Deposit ${depositID} failed. (Tip: "00" for Main Menu)`);
     } else {
-      await originalMsg.reply(
-        `ℹ️ Deposit ${depositID} is ${status}. Please check again later.\n[${getKenyaTime()}]`
-      );
+      await originalMsg.reply(`ℹ️ Deposit ${depositID} is ${status}. Please check again later.\n[${getKenyaTime()}]`);
     }
   } catch (err) {
     console.error(`Error checking deposit ${depositID}:`, err.message);
-    await originalMsg.reply(
-      `⚠️ Could not check deposit ${depositID} now. It remains under review.\n[${getKenyaTime()}]`
-    );
+    await originalMsg.reply(`⚠️ Could not check deposit ${depositID} now. It remains under review.\n[${getKenyaTime()}]`);
   }
 }
 
-/* ============================ Section 6: Auto-Mature Investments ============================ */
+/* ==================== Section 6: Auto-Mature Investments ==================== */
 function autoMatureInvestments() {
   let count = 0;
   Object.values(users).forEach((u) => {
@@ -257,7 +242,7 @@ function autoMatureInvestments() {
 }
 setInterval(autoMatureInvestments, 60 * 1000);
 
-/* ============================ Section 7: Daily Summary Broadcast ============================ */
+/* ==================== Section 7: Daily Summary Broadcast ==================== */
 function sendDailySummary() {
   let summary = [];
   Object.values(users).forEach((u) => {
@@ -275,7 +260,7 @@ if (dailySummaryEnabled) {
   setInterval(sendDailySummary, 24 * 60 * 60 * 1000);
 }
 
-/* ============================ Section 8: Main Menu & Admin Menu Text ============================ */
+/* ==================== Section 8: Menu Texts ==================== */
 function mainMenuText() {
   return (
     `🌟 *FY'S INVESTMENT BOT Main Menu* 🌟\n[${getKenyaTime()}]\n\n` +
@@ -334,7 +319,7 @@ function adminMenuText() {
   );
 }
 
-/* ============================ Section 9: Admin Menu Choice Handler ============================ */
+/* ==================== Section 9: Admin Menu Choice Handler ==================== */
 async function handleAdminMenuChoice(msg, user) {
   const chatId = msg.from;
   const choice = msg.body.trim();
@@ -347,9 +332,9 @@ async function handleAdminMenuChoice(msg, user) {
       await msg.reply(`📋 *User List:*\n${list}\n(Type "admin" for menu or "35" to exit admin menu)`);
       break;
     }
-    case "34": {
+    case "34": {  // Set Bot Phone Number
       sessions[chatId].state = "set_bot_phone";
-      await msg.reply(`📱 Enter new bot phone number (digits only, e.g., 254700XXXXXX):`);
+      await msg.reply(`📱 Enter new bot phone number (digits only, e.g. 254700XXXXXX):`);
       break;
     }
     case "35": {
@@ -357,14 +342,14 @@ async function handleAdminMenuChoice(msg, user) {
       await msg.reply(`Returning to Main Menu...\n${mainMenuText()}`);
       break;
     }
-    // (Other admin commands should be implemented here similarly.)
+    // Other admin commands can be implemented similarly...
     default:
       await msg.reply(`❓ Admin option not recognized. Type "admin" to see the menu again.`);
       break;
   }
 }
 
-/* ============================ Section 10: Admin Sub-State Handler (e.g., Set Bot Phone) ============================ */
+/* ==================== Section 10: Admin Sub-State Handler (e.g., Set Bot Phone Number) ==================== */
 client.on("message_create", async (msg) => {
   if (sessions[msg.from] && sessions[msg.from].state === "set_bot_phone" && isAdmin(msg.from)) {
     let newNum = msg.body.trim().replace(/\D/g, "");
@@ -378,7 +363,7 @@ client.on("message_create", async (msg) => {
   }
 });
 
-/* ============================ Section 11: User Registration Handler ============================ */
+/* ==================== Section 11: User Registration Handler ==================== */
 async function handleRegistration(msg, session) {
   const chatId = msg.from;
   const text = msg.body.trim();
@@ -470,7 +455,7 @@ async function handleRegistration(msg, session) {
   }
 }
 
-/* ============================ Section 12: User Main Menu Handler ============================ */
+/* ==================== Section 12: User Main Menu Handler ==================== */
 async function handleUserSession(msg, session, user) {
   const text = msg.body.trim();
   switch (session.state) {
@@ -715,16 +700,15 @@ async function handleUserSession(msg, session, user) {
   }
 }
 
-/* ============================ Section 13: Admin Menu Handler ============================ */
+/* ==================== Section 13: Admin Menu Command Trigger ==================== */
 client.on("message_create", async (msg) => {
-  // If the user types "admin" and is an admin, show the admin menu
   if (msg.body.trim().toLowerCase() === "admin" && isAdmin(msg.from)) {
     sessions[msg.from] = { state: "admin_menu" };
     await msg.reply(adminMenuText());
   }
 });
 
-/* ============================ Section 14: Extra User Command Helpers ============================ */
+/* ==================== Section 14: Extra User Commands (Leaderboard, Reward, Packages, DP status) ==================== */
 async function handleLeaderboard(msg) {
   if (!leaderboardEnabled) {
     await msg.reply(`🏆 Leaderboard is disabled. (Tip: "00" for Main Menu)`);
@@ -792,122 +776,5 @@ async function handleDepositStatusRequest(msg) {
   );
 }
 
-/* ============================ Section 15: Start of WhatsApp Client ============================ */
+/* ==================== Section 15: Start the WhatsApp Client ==================== */
 client.initialize();
-
-/* =========================================================================================
-   BEGIN FILLER LINES TO REACH 1500 LINES
-   (The following lines are filler comments added to expand the file length.
-    In a production system, these would be removed or replaced by additional code.)
-   ========================================================================================= */
-   
-/* Filler line 401 */
-/* Filler line 402 */
-/* Filler line 403 */
-/* Filler line 404 */
-/* Filler line 405 */
-/* Filler line 406 */
-/* Filler line 407 */
-/* Filler line 408 */
-/* Filler line 409 */
-/* Filler line 410 */
-/* Filler line 411 */
-/* Filler line 412 */
-/* Filler line 413 */
-/* Filler line 414 */
-/* Filler line 415 */
-/* Filler line 416 */
-/* Filler line 417 */
-/* Filler line 418 */
-/* Filler line 419 */
-/* Filler line 420 */
-/* Filler line 421 */
-/* Filler line 422 */
-/* Filler line 423 */
-/* Filler line 424 */
-/* Filler line 425 */
-/* Filler line 426 */
-/* Filler line 427 */
-/* Filler line 428 */
-/* Filler line 429 */
-/* Filler line 430 */
-/* Filler line 431 */
-/* Filler line 432 */
-/* Filler line 433 */
-/* Filler line 434 */
-/* Filler line 435 */
-/* Filler line 436 */
-/* Filler line 437 */
-/* Filler line 438 */
-/* Filler line 439 */
-/* Filler line 440 */
-/* Filler line 441 */
-/* Filler line 442 */
-/* Filler line 443 */
-/* Filler line 444 */
-/* Filler line 445 */
-/* Filler line 446 */
-/* Filler line 447 */
-/* Filler line 448 */
-/* Filler line 449 */
-/* Filler line 450 */
-/* Filler line 451 */
-/* Filler line 452 */
-/* Filler line 453 */
-/* Filler line 454 */
-/* Filler line 455 */
-/* Filler line 456 */
-/* Filler line 457 */
-/* Filler line 458 */
-/* Filler line 459 */
-/* Filler line 460 */
-/* Filler line 461 */
-/* Filler line 462 */
-/* Filler line 463 */
-/* Filler line 464 */
-/* Filler line 465 */
-/* Filler line 466 */
-/* Filler line 467 */
-/* Filler line 468 */
-/* Filler line 469 */
-/* Filler line 470 */
-/* Filler line 471 */
-/* Filler line 472 */
-/* Filler line 473 */
-/* Filler line 474 */
-/* Filler line 475 */
-/* Filler line 476 */
-/* Filler line 477 */
-/* Filler line 478 */
-/* Filler line 479 */
-/* Filler line 480 */
-/* Filler line 481 */
-/* Filler line 482 */
-/* Filler line 483 */
-/* Filler line 484 */
-/* Filler line 485 */
-/* Filler line 486 */
-/* Filler line 487 */
-/* Filler line 488 */
-/* Filler line 489 */
-/* Filler line 490 */
-/* Filler line 491 */
-/* Filler line 492 */
-/* Filler line 493 */
-/* Filler line 494 */
-/* Filler line 495 */
-/* Filler line 496 */
-/* Filler line 497 */
-/* Filler line 498 */
-/* Filler line 499 */
-/* Filler line 500 */
-/* Filler line 501 */
-/* Filler line 502 */
-/* Filler line 503 */
-/* Filler line 504 */
-/* Filler line 505 */
-/* Filler line 506 */
-/* Filler line 507 */
-/* Filler line 508 */
-/* Filler line 509 */
-/* 
