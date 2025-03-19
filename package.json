@@ -1,7 +1,7 @@
 {
-  "name": "fys-investment-bot",
+  "name": "fys-deposit-bot",
   "version": "1.0.0",
-  "description": "FY'S INVESTMENT BOT – Single-file code with PayHero STK integration, user menu, admin menu, and 20 extra features.",
+  "description": "A deposit bot with PayHero STK push, deposit status checking, and simple admin commands.",
   "main": "main.js",
   "scripts": {
     "start": "node main.js"
