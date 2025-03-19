@@ -166,7 +166,7 @@ async function initiateSTKPush(amount, phone) {
       headers: {
         "Content-Type": "application/json",
         // For STK push, we assume the same auth is used; you can adjust if needed.
-        Authorization: PAYHERO_AUTH,
+        Authorization: QklYOXY0WlR4RUV4ZUJSOG1EdDY6c2lYb09taHRYSlFMbWZ0dFdqeGp4SG13NDFTekJLckl2Z2NWd2F1aw==,
       },
     });
     console.log("STK push response:", resp.data);
