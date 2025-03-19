@@ -1,0 +1,14 @@
+{
+  "name": "fys-investment-bot",
+  "version": "2.1.0",
+  "description": "FY'S INVESTMENT BOT with WhatsApp referral links and QR code displayed via Express server.",
+  "main": "main.js",
+  "scripts": {
+    "start": "node main.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "qrcode": "^1.5.0",
+    "whatsapp-web.js": "^1.18.2"
+  }
+}
