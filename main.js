@@ -1,27 +1,28 @@
 /**
  * FY'S DEPOSIT BOT
  *
- * User Flow:
- *   - Bot asks for deposit amount (min depositMin, max 10,000).
- *   - After 3 seconds, prompts for phone number (must start with 07 or 01, exactly 10 digits).
- *   - Initiates STK push via PayHero.
- *   - Alerts admin (default: 254701339573).
- *   - After 20 seconds, fetches transaction status from PayHero.
- *     If status === SUCCESS, shows user a success message with the MPESA transaction code.
+ * USER FLOW:
+ * 1. Bot asks for deposit amount (min depositMin, max 10,000).
+ * 2. After 3s, it prompts for the phone number (must start with 07 or 01, exactly 10 digits).
+ * 3. Initiates an STK push via PayHero.
+ * 4. Alerts admin (default: 254701339573).
+ * 5. After 20s, it fetches the transaction status using the provided auth for status.
+ *    The API response is displayed to the user (including MPESA transaction code).
+ * 6. At any time, a user can type "Start" to begin the deposit process again.
  *
- * Admin Features (via "admin" command):
- *   1. Set deposit minimum amount.
- *   2. Set welcome message.
- *   3. View deposit attempts.
- *   4. Message users by phone.
- *   5. Back to Main Menu.
+ * ADMIN COMMANDS (message starts with "admin"):
+ * - admin setmin <amount>      → Set deposit minimum amount.
+ * - admin setwelcome <message> → Update the welcome message.
+ * - admin depositlist          → View all deposit attempts.
+ * - admin message <phones> <msg> → Send a message to specified users (comma-separated phone numbers).
+ * - If admin sends "admin", a numbered admin menu is shown.
  *
- * The QR code webpage is styled as "FY'S PROPERTY" and shows a colorful QR code.
- * The QR code is also printed in ASCII to the console.
+ * The Express webpage is styled as "FY'S PROPERTY" with a colorful design and displays the QR code.
+ * The QR code is also printed as ASCII in the console.
  */
 
 //////////////////////////////
-// Section 1: Imports & Globals
+// Section 1: Imports & Global Variables
 //////////////////////////////
 const { Client } = require("whatsapp-web.js");
 const express = require("express");
@@ -32,7 +33,7 @@ const fs = require("fs");
 const path = require("path");
 
 // Admin settings
-const SUPER_ADMIN = "254701339573"; // default admin number
+const SUPER_ADMIN = "254701339573";
 let admins = [SUPER_ADMIN];
 
 // Deposit configuration (editable by admin)
@@ -40,18 +41,20 @@ let depositMin = 1;
 const depositMax = 10000;
 let customWelcomeMessage = "👋 Welcome to FY'S DEPOSIT BOT! Please enter the amount you wish to deposit (min " + depositMin + ", max 10000).";
 
-// Data storage for deposit attempts
+// Data structure for deposit attempts
 // Each deposit: { userId, amount, phone, depositID, status, mpesaCode, timestamp }
 let depositAttempts = [];
 
-// In-memory sessions (by WhatsApp ID)
+// In-memory sessions for users (by WhatsApp ID)
 let sessions = {};
 
-// PayHero configuration – use provided auth exactly
-const PAYHERO_AUTH = "Basic QklYOXY0WlR4RUV4ZUJSOG1EdDY6c2lYb09taHRYSlFMbWZ0dFdqeGp4SG13NDFTekJLckl2Z2NWd2F1aw==";
+// PayHero configuration
+// For STK push, we assume a default auth (you may update this if needed)
+// For checking transaction status, we use the provided auth:
+const PAYHERO_STATUS_AUTH = "Basic QklYOXY0WlR4RUV4ZUJSOG1EdDY6c2lYb09taHRYSlFMbWZ0dFdqeGp4SG13NDFTekJLckl2Z2NWd2F1aw==";
 const PAYHERO_PAYMENTS_URL = "https://backend.payhero.co.ke/api/v2/payments";
-const PAYHERO_STATUS_URL = "https://backend.payhero.co.ke/api/v2/transaction-status";
-const CHANNEL_ID = 529;  // adjust if needed
+const PAYHERO_STATUS_URL   = "https://backend.payhero.co.ke/api/v2/transaction-status";
+const CHANNEL_ID = 529; // adjust if needed
 
 // File to save deposit attempts
 const DEPOSITS_FILE = path.join(__dirname, "deposits.json");
@@ -93,12 +96,11 @@ function updateSessionState(session, newState) {
 }
 
 //////////////////////////////
-// Section 3: Express Server & QR Code Webpage (FY'S PROPERTY)
+// Section 3: Express Server & QR Code Webpage ("FY'S PROPERTY")
 //////////////////////////////
 const app = express();
 let lastQr = null;
 app.get("/", (req, res) => {
-  // Generate a beautiful webpage with a colorful QR code
   qrcode.toDataURL(lastQr, (err, url) => {
     if (err) return res.send("Error generating QR code.");
     res.send(`
@@ -106,7 +108,7 @@ app.get("/", (req, res) => {
         <head>
           <title>FY'S PROPERTY</title>
           <style>
-            body { background: linear-gradient(135deg, #f6d365, #fda085); font-family: 'Arial', sans-serif; text-align: center; padding-top: 50px; color: #2c3e50; }
+            body { background: linear-gradient(135deg, #f6d365, #fda085); font-family: Arial, sans-serif; text-align: center; padding-top: 50px; color: #2c3e50; }
             h1 { font-size: 48px; margin-bottom: 20px; }
             p { font-size: 20px; }
             img { border: 5px solid #2c3e50; border-radius: 10px; }
@@ -115,7 +117,7 @@ app.get("/", (req, res) => {
         <body>
           <h1>FY'S PROPERTY</h1>
           <img src="${url}" alt="QR Code"/>
-          <p>📱 Scan this QR code with WhatsApp to connect with our bot!</p>
+          <p>📱 Scan this QR code with WhatsApp to connect with FY'S DEPOSIT BOT!</p>
         </body>
       </html>
     `);
@@ -131,9 +133,9 @@ app.listen(3000, () => {
 const { Client: WClient } = require("whatsapp-web.js");
 const client = new WClient();
 client.on("qr", (qr) => {
-  // Print the QR code in ASCII to console
+  // Print QR code in ASCII to console
   qrcodeTerminal.generate(qr, { small: true });
-  console.log("Scan the QR code above or visit http://localhost:3000 for a colorful QR code page.");
+  console.log("Scan the QR above or visit http://localhost:3000 for a colorful QR code page.");
   lastQr = qr;
 });
 client.on("ready", async () => {
@@ -146,7 +148,7 @@ client.on("ready", async () => {
 });
 
 //////////////////////////////
-// Section 5: STK Push & Transaction Status Check via PayHero
+// Section 5: PayHero STK Push & Transaction Status Check
 //////////////////////////////
 async function initiateSTKPush(amount, phone) {
   const depositID = generateDepositID();
@@ -157,46 +159,50 @@ async function initiateSTKPush(amount, phone) {
     provider: "m-pesa",
     external_reference: depositID,
     customer_name: "Deposit Request",
-    callback_url: "https://yourdomain.com/callback" // UPDATE with your real callback URL
+    callback_url: "https://yourdomain.com/callback" // UPDATE this URL accordingly
   };
   try {
     let resp = await axios.post(PAYHERO_PAYMENTS_URL, payload, {
       headers: {
         "Content-Type": "application/json",
+        // For STK push, we assume the same auth is used; you can adjust if needed.
         Authorization: PAYHERO_AUTH,
       },
     });
     console.log("STK push response:", resp.data);
     return { success: true, depositID };
   } catch (err) {
-    console.error("STK push error:", err.message);
+    console.error("Error initiating STK push:", err.message);
     return { success: false, depositID: generateDepositID() };
   }
 }
 
 async function checkTransactionStatus(depositID, originalMsg) {
-  let dep = depositAttempts.find((d) => d.depositID === depositID);
+  let dep = depositAttempts.find(d => d.depositID === depositID);
   if (!dep || dep.status !== "under review") return;
   try {
     let url = `${PAYHERO_STATUS_URL}?reference=${depositID}`;
     let response = await axios.get(url, {
-      headers: { Authorization: PAYHERO_AUTH },
+      headers: { Authorization: PAYHERO_STATUS_AUTH }
     });
     console.log("Transaction status response:", response.data);
     let status = response.data.status;
-    // Extract a transaction code (from provider_reference or third_party_reference)
+    let transactionDate = response.data.transaction_date || "N/A";
+    let provider = response.data.provider || "N/A";
+    let merchant = response.data.merchant || "N/A";
     let mpesaCode = response.data.provider_reference || response.data.third_party_reference || "N/A";
+    
     if (status === "SUCCESS") {
       dep.status = "confirmed";
       dep.mpesaCode = mpesaCode;
       saveDeposits();
-      await originalMsg.reply(`✅ Your deposit (ID: ${dep.depositID}) of Ksh ${dep.amount} was successful! 🎉\nMPESA Code: ${mpesaCode}`);
+      await originalMsg.reply(`✅ Your deposit (ID: ${dep.depositID}) of Ksh ${dep.amount} was successful!\nTransaction Date: ${transactionDate}\nProvider: ${provider}\nMerchant: ${merchant}\nMPESA Code: ${mpesaCode}\nThank you! 🎉`);
     } else if (status === "FAILED") {
       dep.status = "failed";
       saveDeposits();
       await originalMsg.reply(`❌ Your deposit (ID: ${dep.depositID}) failed. Please try again later.`);
     } else {
-      await originalMsg.reply(`ℹ️ Your deposit (ID: ${dep.depositID}) is currently ${status}.\nMPESA Code: ${mpesaCode}\nPlease check again later.`);
+      await originalMsg.reply(`ℹ️ Your deposit (ID: ${dep.depositID}) is currently ${status}.\nTransaction Date: ${transactionDate}\nMPESA Code: ${mpesaCode}\nPlease check again later.`);
     }
   } catch (err) {
     console.error("Error checking transaction status:", err.message);
@@ -247,7 +253,6 @@ async function processAdminCommand(msg) {
       }
       break;
     case "message":
-      // Usage: admin message <phone1,phone2,...> <your message>
       if (parts.length < 4) {
         await msg.reply("❓ Usage: admin message <comma separated phone numbers> <your message>");
       } else {
@@ -273,7 +278,6 @@ async function processAdminCommand(msg) {
 }
 
 async function showAdminMenu(msg) {
-  // Show numbered admin menu
   let menu = 
 `👑 *ADMIN MENU* 👑
 1. Set Deposit Minimum Amount
@@ -283,12 +287,10 @@ async function showAdminMenu(msg) {
 5. Back to Main Menu
 Type the number of your choice.`;
   await msg.reply(menu);
-  // Set session state for admin menu
   sessions[msg.from] = { state: "admin_menu" };
 }
 
 client.on("message_create", async (msg) => {
-  // If message starts with "admin" (and is not already processed by processAdminCommand)
   if (msg.body.trim().toLowerCase() === "admin") {
     if (isAdmin(msg.from)) {
       await showAdminMenu(msg);
@@ -297,8 +299,6 @@ client.on("message_create", async (msg) => {
     }
     return;
   }
-  
-  // If admin is in admin menu state and sends a number, process it:
   if (sessions[msg.from] && sessions[msg.from].state === "admin_menu" && isAdmin(msg.from)) {
     let choice = msg.body.trim();
     switch (choice) {
@@ -315,7 +315,7 @@ client.on("message_create", async (msg) => {
         sessions[msg.from].state = "idle";
         break;
       case "4":
-        await msg.reply("Please type: `admin message <phone1,phone2,...> <your message>` to send a message to users.");
+        await msg.reply("Please type: `admin message <phone1,phone2,...> <your message>` to message users.");
         sessions[msg.from].state = "idle";
         break;
       case "5":
@@ -335,11 +335,17 @@ client.on("message_create", async (msg) => {
 //////////////////////////////
 client.on("message_create", async (msg) => {
   if (msg.fromMe) return;
-  
-  // If already handled in admin section, skip
+  // Skip if admin command already processed
   if (msg.body.trim().toLowerCase().startsWith("admin")) return;
   
-  // If no session exists, start deposit flow
+  // Allow user to type "Start" to begin deposit flow again.
+  if (msg.body.trim().toLowerCase() === "start") {
+    sessions[msg.from] = { state: "awaiting_amount" };
+    await msg.reply(customWelcomeMessage);
+    return;
+  }
+  
+  // Start deposit flow if no session exists
   if (!sessions[msg.from]) {
     sessions[msg.from] = { state: "awaiting_amount" };
     await msg.reply(customWelcomeMessage);
@@ -348,7 +354,6 @@ client.on("message_create", async (msg) => {
   
   let session = sessions[msg.from];
   
-  // State: awaiting deposit amount
   if (session.state === "awaiting_amount") {
     let amount = parseFloat(msg.body.trim());
     if (isNaN(amount) || amount < depositMin || amount > depositMax) {
@@ -364,7 +369,6 @@ client.on("message_create", async (msg) => {
     return;
   }
   
-  // State: awaiting phone number
   if (session.state === "awaiting_phone") {
     let phone = msg.body.trim();
     if (!/^(07|01)\d{8}$/.test(phone)) {
@@ -386,14 +390,12 @@ client.on("message_create", async (msg) => {
     };
     depositAttempts.push(depositRec);
     saveDeposits();
-    
     // Alert admin
     try {
       await client.sendMessage(`${SUPER_ADMIN}@c.us`, `🔔 Deposit Alert:\nUser: ${msg.from}\nPhone: ${phone}\nAmount: Ksh ${session.amount}\nDeposit ID: ${depositID}\nTime: ${depositRec.timestamp}`);
     } catch (err) {
       console.error("Error alerting admin:", err);
     }
-    
     if (stkResp.success) {
       await msg.reply(`💳 STK push sent! We'll check the transaction status in ~20 seconds. Please wait...`);
       setTimeout(async () => {
@@ -402,19 +404,36 @@ client.on("message_create", async (msg) => {
     } else {
       await msg.reply("❌ STK push failed. Please try again later.");
     }
-    
     sessions[msg.from] = { state: "main_menu" };
     return;
   }
   
-  // Main menu fallback: if user types "00", go back to main menu prompt
+  // "DP status <DEP-ID>" to check deposit status manually
+  if (/^dp status /i.test(msg.body.trim())) {
+    let parts = msg.body.trim().split(" ");
+    if (parts.length < 3) {
+      await msg.reply("❓ Usage: DP status <DEP-ID>");
+      return;
+    }
+    let depID = parts.slice(2).join(" ");
+    let found = depositAttempts.find(d => d.depositID === depID);
+    if (!found) {
+      await msg.reply(`❌ No deposit found with ID: ${depID}`);
+    } else {
+      let code = found.mpesaCode || "N/A";
+      await msg.reply(`📝 Deposit Status:\nID: ${found.depositID}\nAmount: Ksh ${found.amount}\nStatus: ${found.status}\nMPESA Code: ${code}\nTime: ${found.timestamp}`);
+    }
+    return;
+  }
+  
+  // "00" resets to main menu
   if (msg.body.trim() === "00") {
     sessions[msg.from] = { state: "main_menu" };
-    await msg.reply("🏠 Main Menu: To deposit again, simply type the deposit amount.");
+    await msg.reply("🏠 Main Menu: To deposit again, simply enter the deposit amount or type 'Start'.");
     return;
   }
   
-  // Fallback response:
+  // Default fallback
   await msg.reply("❓ Please enter your deposit amount or type '00' for Main Menu.");
 });
 
