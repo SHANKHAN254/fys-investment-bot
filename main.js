@@ -2,34 +2,26 @@
  * FY'S INVESTMENT BOT – SUPERCHARGED VERSION 🚀
  *
  * FEATURES:
- *   • Displays a QR code on an Express webpage (http://localhost:3000)
- *   • Engaging, emoji-filled responses and clear navigation:
- *       - "0" (🔙) goes back to previous activity.
+ *  • Displays a QR code on an Express webpage (http://localhost:3000)
+ *  • Engaging, emoji-filled responses with clear navigation:
+ *       - "0" (🔙) goes back to the previous activity.
  *       - "00" (🏠) returns to the Main Menu.
- *   • Users can: Invest, Check Balance, Withdraw, Deposit, Change PIN,
- *       get Referral Link, view Referral History, Update Profile,
- *       view Reward Points, and view Investment Packages.
- *   • Admins can:
- *       - Manage users (ban/unban, add/deduct balance)
- *       - Set deposit/withdrawal limits and deposit info
- *       - Change investment return %, dynamic referral bonus %, and reward rate
- *       - Mature or cancel investments
- *       - Broadcast reminders to all users
- *       - Toggle Maintenance Mode and Leaderboard feature
- *       - Add custom investment packages (name, min, max, return%, duration)
- *
- * EXTRA FEATURES (7 New Ones):
- *   1. Dynamic Referral Bonus (modifiable via "admin setrefbonus")
- *   2. Custom Welcome Message (modifiable via "admin setwelcome")
- *   3. Auto-Notification Broadcast (via "admin sendreminder")
- *   4. Maintenance Mode (toggle with "admin maintenance on/off")
- *   5. Leaderboard (users type "leaderboard"; toggle with "admin leaderboard on/off")
- *   6. Reward Points System (modifiable via "admin setrewardrate", "admin addpoints", "admin deductpoints"; user command "reward")
- *   7. Custom Investment Packages (add with "admin addpackage" and view via "packages")
+ *  • Users can: Invest, Check Balance, Withdraw, Deposit, Change PIN,
+ *       get Referral Link, view Referral History, Update Profile, view Reward Points, and see Investment Packages.
+ *  • Admins can: Manage users (ban/unban, add/deduct balance),
+ *       set deposit/withdrawal limits, update deposit info, change investment return %, 
+ *       set dynamic referral bonus %, send broadcast reminders, toggle maintenance and leaderboard features,
+ *       adjust reward rate, add/deduct reward points, add/view custom investment packages,
+ *       mature or cancel investments, and more.
+ *  • NEW EXTRA FEATURE: Automatic deposit confirmation via an external API integration.
+ *       The bot polls a (dummy) API endpoint for each deposit with status "under review" every 60 seconds.
+ *       If the API returns a "confirmed" status, the deposit is updated and the user's balance is credited automatically.
  *
  * SETTINGS:
- *   • BOT_PHONE: The bot’s WhatsApp number (digits only, e.g., "254700363422")
- *   • SUPER_ADMIN: Fixed at "254701339573"
+ *  • BOT_PHONE: The bot’s WhatsApp number (digits only, e.g., "254700363422")
+ *  • SUPER_ADMIN: Fixed at "254701339573"
+ *
+ * (Replace the dummy API URL below with your actual deposit status API endpoint.)
  */
 
 const { Client } = require('whatsapp-web.js');
@@ -37,6 +29,7 @@ const fs = require('fs');
 const path = require('path');
 const express = require('express');
 const qrcode = require('qrcode');
+const axios = require('axios');  // For API integration
 
 // ---------------------------
 // CONFIG & GLOBAL VARIABLES
@@ -45,24 +38,27 @@ const BOT_PHONE = '254700363422';
 const SUPER_ADMIN = '254701339573';
 let admins = [SUPER_ADMIN];
 
-// Global limits (modifiable by admin)
+// Global limits (modifiable via admin commands)
 let withdrawalMin = 1000;
-let withdrawalMax = 10000000;  // high value to allow full withdrawal
+let withdrawalMax = 10000000;  // Set high to allow full withdrawal
 let depositMin = 1;
 let depositMax = 10000000;
 
 // Extra feature globals:
-let referralBonusPercent = 3; // default referral bonus percentage
+let referralBonusPercent = 3; // % bonus on first investment from referral
 let customWelcomeMessage = "👋 Welcome to FY'S INVESTMENT BOT! Start your journey to smart investing!";
 let maintenanceMode = false;
 let leaderboardEnabled = false;
-let rewardRate = 1; // reward points per Ksh invested
-let investmentPackages = []; // each package: { name, min, max, returnPercent, durationDays }
+let rewardRate = 1; // Reward points per Ksh invested
+let investmentPackages = []; // e.g., { name, min, max, returnPercent, durationDays }
 
-// Deposit payment details
+// Deposit payment details (modifiable via admin)
 let depositInfo = { number: "0701339573", name: "Camlus Okoth" };
 
-// User data and session storage
+// Dummy API endpoint for deposit status checking (replace with your real endpoint)
+const DEPOSIT_STATUS_API = "https://api.example.com/depositstatus";
+
+// User data file and session storage
 const USERS_FILE = path.join(__dirname, 'users.json');
 let sessions = {};
 let users = {};
@@ -72,25 +68,23 @@ if (fs.existsSync(USERS_FILE)) {
 } else { users = {}; }
 function saveUsers() { fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2)); }
 
-// Helper: get current Kenya time
+// Helper: get Kenya time as a string
 function getKenyaTime() {
   return new Date().toLocaleString('en-KE', { timeZone: 'Africa/Nairobi' });
 }
 
-// Helper: random string generator
+// Helper: random string generator for codes
 function randomString(length) {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
   let result = '';
-  for (let i=0; i<length; i++) {
-    result += chars.charAt(Math.floor(Math.random()*chars.length));
-  }
+  for (let i=0; i<length; i++) { result += chars.charAt(Math.floor(Math.random()*chars.length)); }
   return result;
 }
 function generateReferralCode() { return "FY'S-" + randomString(5); }
 function generateDepositID() { return "DEP-" + randomString(8); }
 function generateWithdrawalID() { return "WD-" + randomString(4); }
 
-// Navigation helper: update state (storing previous state)
+// Navigation helper: update session state and store previous state
 function updateState(session, newState) {
   session.prevState = session.state;
   session.state = newState;
@@ -141,15 +135,46 @@ client.on('ready', async () => {
 });
 
 // ---------------------------
+// POLL PENDING DEPOSITS VIA API
+// ---------------------------
+// This function checks all pending deposits ("under review") and calls the external API.
+// If a deposit is confirmed, its status is updated and the deposit amount is credited automatically.
+async function pollPendingDeposits() {
+  for (const phone in users) {
+    let user = users[phone];
+    for (let dep of user.deposits) {
+      if (dep.status === 'under review') {
+        try {
+          const response = await axios.get(`${DEPOSIT_STATUS_API}?depositId=${dep.depositID}`);
+          // Assume the API returns JSON with a field "status" which is "confirmed" or "rejected"
+          if (response.data.status === 'confirmed') {
+            dep.status = 'confirmed';
+            user.accountBalance += parseFloat(dep.amount);
+            console.log(`Deposit ${dep.depositID} confirmed via API. Added Ksh ${dep.amount} to ${user.phone}`);
+          } else if (response.data.status === 'rejected') {
+            dep.status = 'rejected';
+          }
+        } catch (err) {
+          console.error(`Error checking deposit ${dep.depositID}:`, err.message);
+        }
+      }
+    }
+  }
+  saveUsers();
+}
+// Poll every 60 seconds.
+setInterval(pollPendingDeposits, 60000);
+
+// ---------------------------
 // MAIN MESSAGE HANDLER
 // ---------------------------
 client.on('message_create', async (message) => {
-  // If maintenance mode is on and sender is not admin, reply maintenance message.
+  // If maintenance mode is enabled (for non-admins), show maintenance message.
   if (maintenanceMode && !isAdmin(message.from)) {
-    await message.reply(`🚧 FY'S INVESTMENT BOT is currently under maintenance. Please try again later. (Tip: "00" for Main Menu)`);
+    await message.reply(`🚧 FY'S INVESTMENT BOT is under maintenance. Please try again later. (Tip: "00" for Main Menu)`);
     return;
   }
-  if (message.fromMe) return; // Ignore own messages
+  if (message.fromMe) return; // Ignore bot’s own messages
 
   const chatId = message.from;
   const msgBody = message.body.trim();
@@ -159,7 +184,7 @@ client.on('message_create', async (message) => {
   if (msgBody === '0') {
     if (sessions[chatId] && sessions[chatId].prevState) {
       sessions[chatId].state = sessions[chatId].prevState;
-      await message.reply(`🔙 Going back to your previous activity. (Tip: Type "00" for Main Menu)`);
+      await message.reply(`🔙 Going back to your previous activity. (Tip: "00" for Main Menu)`);
     } else {
       sessions[chatId].state = 'awaiting_menu_selection';
       await message.reply(`🔙 Operation cancelled. Returning to Main Menu...\n\n${mainMenuText()}`);
@@ -171,35 +196,31 @@ client.on('message_create', async (message) => {
     await message.reply(`🏠 Main Menu:\n\n${mainMenuText()}`);
     return;
   }
-  // Additional user commands:
   if (msgBody.toLowerCase() === 'help') {
     await message.reply(
       `❓ *HELP / FAQ*\n\n` +
       `• Registration: Follow the prompts when you first message the bot.\n` +
-      `• Main Menu Options: Invest 💰, Check Balance 🔍, Withdraw 💸, Deposit 💵, Change PIN 🔐, Referral Link 🔗, Referral History 👥, Update Profile ✍️, Reward Points 🎯, and view Packages 📦.\n` +
-      `• Navigation: "0" to go back, "00" to return to Main Menu.\n` +
-      `• Other commands: Type "leaderboard" to view the top investors for today, "reward" to view your reward points, and "packages" to see available investment packages.\n\n` +
+      `• Main Menu Options: Invest 💰, Check Balance 🔍, Withdraw 💸, Deposit 💵, Change PIN 🔐, Referral Link 🔗, Referral History 👥, Update Profile ✍️, Reward Points 🎯, and Packages 📦.\n` +
+      `• Navigation: Type "0" to go back, "00" to return to Main Menu.\n` +
+      `• Additional Commands: "leaderboard" (if enabled) shows today's top investors, "reward" shows your reward points, and "packages" shows available investment packages.\n\n` +
       `Enjoy and invest smartly! 🚀`
     );
     return;
   }
   if (msgBody.toLowerCase() === 'leaderboard' && leaderboardEnabled) {
-    // Compute leaderboard: top 5 users with highest total investment made today.
-    const startOfToday = new Date();
-    startOfToday.setHours(0,0,0,0);
+    // Calculate leaderboard (top 5 users by today's investment total)
+    const startOfToday = new Date(); startOfToday.setHours(0,0,0,0);
     let leaderboard = [];
     Object.values(users).forEach(u => {
       let total = 0;
-      u.investments.forEach(inv => {
-        if (inv.timestamp && inv.timestamp >= startOfToday.getTime()) total += inv.amount;
-      });
+      u.investments.forEach(inv => { if (inv.timestamp >= startOfToday.getTime()) total += inv.amount; });
       leaderboard.push({ name: `${u.firstName} ${u.secondName}`, total });
     });
     leaderboard.sort((a, b) => b.total - a.total);
     leaderboard = leaderboard.slice(0, 5);
-    if (leaderboard.length === 0) {
+    if (leaderboard.length === 0)
       await message.reply(`🏆 Leaderboard is empty for today. Be the first to invest!`);
-    } else {
+    else {
       let lbText = leaderboard.map((entry, i) => `${i+1}. ${entry.name} – Ksh ${entry.total}`).join('\n');
       await message.reply(`🏆 *Today's Top Investors:*\n${lbText}\n[${getKenyaTime()}]`);
     }
@@ -207,17 +228,16 @@ client.on('message_create', async (message) => {
   }
   if (msgBody.toLowerCase() === 'reward') {
     let regUser = Object.values(users).find(u => u.whatsAppId === chatId);
-    if (regUser) {
+    if (regUser)
       await message.reply(`🎯 *Your Reward Points:* ${regUser.rewardPoints || 0}\n(Tip: "00" for Main Menu)`);
-    } else {
+    else
       await message.reply(`You are not registered yet. Please register first!`);
-    }
     return;
   }
   if (msgBody.toLowerCase() === 'packages') {
-    if (investmentPackages.length === 0) {
+    if (investmentPackages.length === 0)
       await message.reply(`📦 No investment packages available at the moment.\n(Tip: "00" for Main Menu)`);
-    } else {
+    else {
       let pkgText = investmentPackages.map((p, i) =>
         `${i+1}. ${p.name} – Min: Ksh ${p.min}, Max: Ksh ${p.max}, Return: ${p.returnPercent}%, Duration: ${p.durationDays} days`
       ).join('\n');
@@ -225,8 +245,7 @@ client.on('message_create', async (message) => {
     }
     return;
   }
-
-  // Admin commands (messages starting with "admin")
+  // Admin commands
   if (msgBody.toLowerCase().startsWith('admin') && isAdmin(chatId)) {
     await processAdminCommand(message);
     return;
@@ -236,16 +255,13 @@ client.on('message_create', async (message) => {
     await handleDepositStatusRequest(message);
     return;
   }
-  // Determine registration status
+  // Check registration
   let regUser = Object.values(users).find(u => u.whatsAppId === chatId);
   if (!sessions[chatId]) { sessions[chatId] = { state: regUser ? 'awaiting_menu_selection' : 'start' }; }
   let session = sessions[chatId];
   if (!regUser) { await handleRegistration(message, session); }
   else {
-    if (regUser.banned) {
-      await message.reply(`🚫 You have been banned from using this service. Please contact support.`);
-      return;
-    }
+    if (regUser.banned) { await message.reply(`🚫 You have been banned from this service. Please contact support.`); return; }
     await handleUserSession(message, session, regUser);
   }
 });
@@ -254,33 +270,23 @@ client.on('message_create', async (message) => {
 // DEPOSIT STATUS HANDLER
 // ---------------------------
 async function handleDepositStatusRequest(message) {
-  const chatId = message.from;
   const parts = message.body.trim().split(' ');
   if (parts.length < 3) {
     await message.reply(`❓ Please specify the deposit ID. E.g.: "DP status DEP-ABCDEFGH"\n(Tip: "0" to go back, "00" for Main Menu)`);
     return;
   }
   const depositID = parts.slice(2).join(' ');
-  let regUser = Object.values(users).find(u => u.whatsAppId === chatId);
-  if (!regUser) {
-    await message.reply(`😕 You are not registered yet. Please register first!`);
-    return;
-  }
+  let regUser = Object.values(users).find(u => u.whatsAppId === message.from);
+  if (!regUser) { await message.reply(`😕 You are not registered yet. Please register first!`); return; }
   let dep = regUser.deposits.find(d => d.depositID.toLowerCase() === depositID.toLowerCase());
-  if (!dep) {
-    await message.reply(`❌ No deposit found with ID: ${depositID}\nPlease check and try again.`);
-    return;
-  }
-  await message.reply(
-    `📝 *Deposit Status:*\n• ID: ${dep.depositID}\n• Amount: Ksh ${dep.amount}\n• Date: ${dep.date}\n• Status: ${dep.status}\n\n[${getKenyaTime()}]\n(Tip: "00" for Main Menu)`
-  );
+  if (!dep) { await message.reply(`❌ No deposit found with ID: ${depositID}\nPlease check and try again.`); return; }
+  await message.reply(`📝 *Deposit Status:*\n• ID: ${dep.depositID}\n• Amount: Ksh ${dep.amount}\n• Date: ${dep.date}\n• Status: ${dep.status}\n\n[${getKenyaTime()}]\n(Tip: "00" for Main Menu)`);
 }
 
 // ---------------------------
 // REGISTRATION HANDLER
 // ---------------------------
 async function handleRegistration(message, session) {
-  const chatId = message.from;
   const msgBody = message.body.trim();
   switch (session.state) {
     case 'start':
@@ -305,7 +311,7 @@ async function handleRegistration(message, session) {
         let ref = Object.values(users).find(u => u.referralCode === code);
         if (ref) {
           session.referredBy = ref.whatsAppId;
-          await message.reply(`👍 Referral code accepted!\nNow type your phone number (start with 070 or 01, 10 digits).`);
+          await message.reply(`👍 Referral code accepted!\nNow type your phone number (070/01, 10 digits).`);
         } else {
           await message.reply(`⚠️ Referral code not found. Proceeding without it.\nType your phone number (070/01, 10 digits).`);
         }
@@ -317,7 +323,7 @@ async function handleRegistration(message, session) {
     }
     case 'awaiting_phone':
       if (!/^(070|01)\d{7}$/.test(msgBody)) {
-        await message.reply(`❌ Invalid phone number! It must start with 070 or 01 and be exactly 10 digits. Please re-enter.`);
+        await message.reply(`❌ Invalid phone number! It must start with 070 or 01 and be 10 digits. Please re-enter.`);
       } else {
         session.phone = msgBody;
         await message.reply(`🔒 Awesome! Now create a *4-digit PIN* for withdrawals.`);
@@ -326,7 +332,7 @@ async function handleRegistration(message, session) {
       break;
     case 'awaiting_withdrawal_pin':
       if (!/^\d{4}$/.test(msgBody)) {
-        await message.reply(`❌ That PIN isn’t 4 digits. Please try a valid 4-digit PIN.`);
+        await message.reply(`❌ That PIN isn’t 4 digits. Try a valid 4-digit PIN.`);
       } else {
         session.withdrawalPIN = msgBody;
         await message.reply(`🔐 Almost done! Now create a *4-digit security PIN* (for inactivity protection).`);
@@ -338,9 +344,8 @@ async function handleRegistration(message, session) {
         await message.reply(`❌ Invalid PIN. Please enter a 4-digit security PIN.`);
       } else {
         session.securityPIN = msgBody;
-        // Create new user record
         const newUser = {
-          whatsAppId: chatId,
+          whatsAppId: message.from,
           firstName: session.firstName,
           secondName: session.secondName,
           phone: session.phone,
@@ -360,7 +365,7 @@ async function handleRegistration(message, session) {
         users[session.phone] = newUser;
         saveUsers();
         await message.reply(`🎉 *Registration Successful!* Welcome, ${newUser.firstName}!\nYour referral code is: ${newUser.referralCode}\n[${getKenyaTime()}]\nType "00" for Main Menu 🏠.`);
-        sessions[chatId] = { state: 'awaiting_menu_selection' };
+        sessions[message.from] = { state: 'awaiting_menu_selection' };
       }
       break;
     default:
@@ -374,11 +379,11 @@ async function handleRegistration(message, session) {
 // USER SESSION HANDLER
 // ---------------------------
 async function handleUserSession(message, session, user) {
-  const chatId = message.from;
   const msgBody = message.body.trim();
   switch (session.state) {
     case 'awaiting_menu_selection':
-      // Main Menu Options including new ones: Referral History & Update Profile
+      // Main Menu Options (1: Invest, 2: Check Balance, 3: Withdraw, 4: Deposit,
+      // 5: Change PIN, 6: Referral Link, 7: Referral History, 8: Update Profile)
       switch (msgBody) {
         case '1':
           updateState(session, 'invest');
@@ -390,7 +395,7 @@ async function handleUserSession(message, session, user) {
           break;
         case '3':
           updateState(session, 'withdraw');
-          await message.reply(`💸 *Withdrawal:*\nEnter amount to withdraw from referral earnings.\n(Min: Ksh ${withdrawalMin} unless full withdrawal, Max: Ksh ${withdrawalMax})\n(Tip: "0" to go back, "00" for Main Menu)`);
+          await message.reply(`💸 *Withdraw Earnings:*\nEnter amount to withdraw (Min: Ksh ${withdrawalMin} unless full earnings, Max: Ksh ${withdrawalMax}):\n(Tip: "0" to go back, "00" for Main Menu)`);
           break;
         case '4':
           updateState(session, 'deposit');
@@ -408,16 +413,15 @@ async function handleUserSession(message, session, user) {
           }
           break;
         case '7':
-          // Referral History
           if (!user.referrals || user.referrals.length === 0)
-            await message.reply(`👥 *Referral History:*\nYou haven’t referred anyone yet.\n(Tip: "00" for Main Menu)`);
+            await message.reply(`👥 *Referral History:*\nNo referrals yet. Start sharing your link!\n(Tip: "00" for Main Menu)`);
           else
-            await message.reply(`👥 *Referral History:*\nTotal Referrals: ${user.referrals.length}\nPhones: ${user.referrals.join(', ')}\nTotal Referral Earnings: Ksh ${user.referralEarnings}\n(Tip: "00" for Main Menu)`);
+            await message.reply(`👥 *Referral History:*\nTotal: ${user.referrals.length}\nPhones: ${user.referrals.join(', ')}\nEarnings: Ksh ${user.referralEarnings}\n(Tip: "00" for Main Menu)`);
           session.state = 'awaiting_menu_selection';
           break;
         case '8':
           updateState(session, 'update_profile_menu');
-          await message.reply(`✍️ *Update Profile:*\nChoose:\n1. First Name\n2. Second Name\n3. Phone Number\nReply with 1, 2, or 3.\n(Tip: "0" to go back, "00" for Main Menu)`);
+          await message.reply(`✍️ *Update Profile:*\n1. First Name\n2. Second Name\n3. Phone Number\nReply with 1, 2, or 3.\n(Tip: "0" to go back, "00" for Main Menu)`);
           break;
         default:
           await message.reply(`❓ Option not recognized. Please enter a valid number.\n(Tip: "00" for Main Menu)`);
@@ -426,12 +430,11 @@ async function handleUserSession(message, session, user) {
       break;
     case 'invest': {
       let amt = parseFloat(msgBody);
-      if (isNaN(amt) || amt < 1000 || amt > 150000) {
+      if (isNaN(amt) || amt < 1000 || amt > 150000)
         await message.reply(`❌ Enter an amount between Ksh 1,000 and Ksh 150,000.\n(Tip: "0" to go back, "00" for Main Menu)`);
-      } else if (user.accountBalance < amt) {
-        await message.reply(`⚠️ Insufficient funds! Your balance is Ksh ${user.accountBalance}.\nPlease deposit funds first.\n(Tip: "00" for Main Menu)`);
-        session.state = 'awaiting_menu_selection';
-      } else {
+      else if (user.accountBalance < amt)
+        await message.reply(`⚠️ Insufficient funds! Your balance is Ksh ${user.accountBalance}.\nPlease deposit funds first.\n(Tip: "00" for Main Menu)`), session.state = 'awaiting_menu_selection';
+      else {
         session.investAmount = amt;
         updateState(session, 'confirm_investment');
         await message.reply(`🔐 Enter your 4-digit PIN to confirm an investment of Ksh ${amt}.\n(Tip: "0" to go back, "00" for Main Menu)`);
@@ -439,9 +442,9 @@ async function handleUserSession(message, session, user) {
       break;
     }
     case 'confirm_investment':
-      if (msgBody !== user.withdrawalPIN) {
-        await message.reply(`❌ Incorrect PIN. Try again or type "0" to cancel.`);
-      } else {
+      if (msgBody !== user.withdrawalPIN)
+        await message.reply(`❌ Incorrect PIN! Try again or type "0" to cancel.`);
+      else {
         let inv = {
           amount: session.investAmount,
           timestamp: Date.now(),
@@ -462,10 +465,10 @@ async function handleUserSession(message, session, user) {
             console.log(`📢 [${getKenyaTime()}] Referral bonus: ${referrer.firstName} earned Ksh ${bonus.toFixed(2)} from ${user.firstName}'s investment.`);
           }
         }
-        // Add reward points
+        // Award reward points
         user.rewardPoints = (user.rewardPoints || 0) + session.investAmount * rewardRate;
         saveUsers();
-        await message.reply(`✅ Investment Confirmed!\n• Amount: Ksh ${session.investAmount}\n• Expected Return: Ksh ${inv.expectedReturn} (at ${investmentReturnPercent}%)\n• Date: ${getKenyaTime()}\nYou earned reward points: ${session.investAmount * rewardRate}\nThank you for investing! 🎉\n(Tip: "00" for Main Menu)`);
+        await message.reply(`✅ Investment Confirmed!\n• Amount: Ksh ${session.investAmount}\n• Expected Return: Ksh ${inv.expectedReturn} (at ${investmentReturnPercent}%)\n• Date: ${getKenyaTime()}\nYou earned ${session.investAmount * rewardRate} reward points!\nThank you for investing! 🎉\n(Tip: "00" for Main Menu)`);
         session.state = 'awaiting_menu_selection';
         await client.sendMessage(user.whatsAppId, `🎊 Investment Alert: You invested Ksh ${session.investAmount} on ${getKenyaTime()}.`);
         await notifyAdmins(`🔔 *Investment Alert!*\nUser: ${user.firstName} ${user.secondName} (${user.phone})\nInvested: Ksh ${session.investAmount}\n[${getKenyaTime()}]`);
@@ -474,17 +477,15 @@ async function handleUserSession(message, session, user) {
     case 'check_balance_menu':
       switch (msgBody) {
         case '1':
-          await message.reply(`💳 Account Balance: Ksh ${user.accountBalance}\n[${getKenyaTime()}]\n(Tip: "00" for Main Menu)`);
-          session.state = 'awaiting_menu_selection';
+          await message.reply(`💳 Account Balance: Ksh ${user.accountBalance}\n[${getKenyaTime()}]\n(Tip: "00" for Main Menu)`), session.state = 'awaiting_menu_selection';
           break;
         case '2':
-          await message.reply(`🎉 Referral Earnings: Ksh ${user.referralEarnings}\n[${getKenyaTime()}]\n(Tip: "00" for Main Menu)`);
-          session.state = 'awaiting_menu_selection';
+          await message.reply(`🎉 Referral Earnings: Ksh ${user.referralEarnings}\n[${getKenyaTime()}]\n(Tip: "00" for Main Menu)`), session.state = 'awaiting_menu_selection';
           break;
         case '3':
-          if (user.investments.length === 0) {
+          if (user.investments.length === 0)
             await message.reply(`📄 No investments yet.\n[${getKenyaTime()}]\n(Tip: "00" for Main Menu)`);
-          } else {
+          else {
             let hist = user.investments.map((inv, i) =>
               `${i+1}. Amount: Ksh ${inv.amount}, Return: Ksh ${inv.expectedReturn}, Date: ${inv.date}, Status: ${inv.status}${inv.matured ? " (Matured)" : ""}`
             ).join('\n');
@@ -493,20 +494,19 @@ async function handleUserSession(message, session, user) {
           session.state = 'awaiting_menu_selection';
           break;
         default:
-          await message.reply(`❓ Please reply with 1, 2, or 3.\n(Tip: "0" to go back, "00" for Main Menu)`);
+          await message.reply(`❓ Reply with 1, 2, or 3.\n(Tip: "0" to go back, "00" for Main Menu)`);
           break;
       }
       break;
     case 'withdraw': {
       let amt = parseFloat(msgBody);
-      if (isNaN(amt)) {
+      if (isNaN(amt))
         await message.reply(`❌ Enter a valid withdrawal amount.\n(Tip: "0" to go back, "00" for Main Menu)`);
-      } else if (amt !== user.referralEarnings && (amt < withdrawalMin || amt > withdrawalMax)) {
+      else if (amt !== user.referralEarnings && (amt < withdrawalMin || amt > withdrawalMax))
         await message.reply(`❌ Withdrawal must be between Ksh ${withdrawalMin} and Ksh ${withdrawalMax} (unless withdrawing full earnings).\n(Tip: "0" to go back, "00" for Main Menu)`);
-      } else if (user.referralEarnings < amt) {
-        await message.reply(`⚠️ You only have Ksh ${user.referralEarnings} in referral earnings.\n(Tip: "00" for Main Menu)`);
-        session.state = 'awaiting_menu_selection';
-      } else {
+      else if (user.referralEarnings < amt)
+        await message.reply(`⚠️ You only have Ksh ${user.referralEarnings} in referral earnings.\n(Tip: "00" for Main Menu)`), session.state = 'awaiting_menu_selection';
+      else {
         user.referralEarnings -= amt;
         let wd = { amount: amt, date: getKenyaTime(), withdrawalID: generateWithdrawalID(), status: 'pending' };
         user.withdrawals.push(wd);
@@ -519,9 +519,9 @@ async function handleUserSession(message, session, user) {
     }
     case 'deposit': {
       let amt = parseFloat(msgBody);
-      if (isNaN(amt) || amt < depositMin || amt > depositMax) {
+      if (isNaN(amt) || amt < depositMin || amt > depositMax)
         await message.reply(`❌ Deposit amount must be between Ksh ${depositMin} and Ksh ${depositMax}.\n(Tip: "0" to go back, "00" for Main Menu)`);
-      } else {
+      else {
         let bonus = amt >= 100000 ? (amt * 1 / 100).toFixed(2) : 0;
         let dep = { amount: amt, date: getKenyaTime(), depositID: generateDepositID(), status: 'under review' };
         user.deposits.push(dep);
@@ -534,17 +534,17 @@ async function handleUserSession(message, session, user) {
       break;
     }
     case 'change_pin':
-      if (msgBody !== user.withdrawalPIN) {
-        await message.reply(`❌ Incorrect PIN. Please try again or type "0" to cancel.`);
-      } else {
+      if (msgBody !== user.withdrawalPIN)
+        await message.reply(`❌ Incorrect PIN. Try again or type "0" to cancel.`);
+      else {
         updateState(session, 'new_pin');
         await message.reply(`🔑 Enter your new 4-digit PIN.\n(Tip: "0" to go back, "00" for Main Menu)`);
       }
       break;
     case 'new_pin':
-      if (!/^\d{4}$/.test(msgBody)) {
-        await message.reply(`❌ Invalid PIN. Enter a 4-digit PIN.`);
-      } else {
+      if (!/^\d{4}$/.test(msgBody))
+        await message.reply(`❌ That PIN isn’t valid. Enter a 4-digit PIN.`);
+      else {
         user.withdrawalPIN = msgBody;
         saveUsers();
         await message.reply(`✅ PIN changed successfully!\n[${getKenyaTime()}]\n(Tip: "00" for Main Menu)`);
@@ -583,9 +583,9 @@ async function handleUserSession(message, session, user) {
       session.state = 'awaiting_menu_selection';
       break;
     case 'update_profile_phone':
-      if (!/^(070|01)\d{7}$/.test(msgBody)) {
-        await message.reply(`❌ Invalid phone format. It must start with 070 or 01 and be 10 digits. Try again.`);
-      } else {
+      if (!/^(070|01)\d{7}$/.test(msgBody))
+        await message.reply(`❌ Invalid phone number format. Try again.`);
+      else {
         user.phone = msgBody;
         saveUsers();
         await message.reply(`✅ Phone Number updated to ${user.phone}.\n(Tip: "00" for Main Menu)`);
@@ -603,12 +603,11 @@ async function handleUserSession(message, session, user) {
 // ADMIN COMMAND PROCESSOR
 // ---------------------------
 async function processAdminCommand(message) {
-  const chatId = message.from;
   const parts = message.body.trim().split(' ');
   const cmd = (parts[1] || '').toLowerCase();
   const subCmd = (parts[2] || '').toLowerCase();
 
-  // admin CMD: show list of admin commands.
+  // admin CMD: list admin commands.
   if (cmd === 'cmd') {
     await message.reply(
       `⚙️ *ADMIN COMMANDS* ⚙️\n\n` +
@@ -616,22 +615,22 @@ async function processAdminCommand(message) {
       `2. admin view users – List all users.\n` +
       `3. admin view investments – List all investments.\n` +
       `4. admin view deposits – List all deposits.\n` +
-      `5. admin approve deposit <DEP-ID>\n` +
-      `6. admin reject deposit <DEP-ID> <Reason>\n` +
-      `7. admin approve withdrawal <WD-ID>\n` +
-      `8. admin reject withdrawal <WD-ID> <Reason>\n` +
-      `9. admin ban user <phone> <Reason>\n` +
-      `10. admin add admin <phone>\n` +
-      `11. admin addbalance <phone> <amount>\n` +
-      `12. admin deductbalance <phone> <amount>\n` +
-      `13. admin unban <phone>\n` +
-      `14. admin setwithdrawallimits <min> <max>\n` +
-      `15. admin setdepositlimits <min> <max>\n` +
-      `16. admin setdepositinfo <M-Pesa_Number> <Name>\n` +
-      `17. admin setreturn <percentage>\n` +
+      `5. admin approve deposit <DEP-ID> – Approve a deposit.\n` +
+      `6. admin reject deposit <DEP-ID> <Reason> – Reject a deposit.\n` +
+      `7. admin approve withdrawal <WD-ID> – Approve a withdrawal.\n` +
+      `8. admin reject withdrawal <WD-ID> <Reason> – Reject a withdrawal.\n` +
+      `9. admin ban user <phone> <Reason> – Ban a user.\n` +
+      `10. admin add admin <phone> – Add a new admin (Super Admin only).\n` +
+      `11. admin addbalance <phone> <amount> – Add funds to a user’s balance.\n` +
+      `12. admin deductbalance <phone> <amount> – Deduct funds from a user’s balance.\n` +
+      `13. admin unban <phone> – Unban a user.\n` +
+      `14. admin setwithdrawallimits <min> <max> – Set withdrawal limits.\n` +
+      `15. admin setdepositlimits <min> <max> – Set deposit limits.\n` +
+      `16. admin setdepositinfo <M-Pesa_Number> <Name> – Update deposit details.\n` +
+      `17. admin setreturn <percentage> – Set investment return percentage.\n` +
       `18. admin matureinvestments – Mature investments older than 24hrs.\n` +
-      `19. admin cancelinvestment <phone> <investment_index>\n` +
-      `20. admin setrefbonus <percentage> – Set referral bonus %.\n` +
+      `19. admin cancelinvestment <phone> <investment_index> – Cancel a user's investment.\n` +
+      `20. admin setrefbonus <percentage> – Set referral bonus percentage.\n` +
       `21. admin setwelcome <message> – Set custom welcome message.\n` +
       `22. admin sendreminder <message> – Broadcast reminder to all users.\n` +
       `23. admin maintenance <on/off> – Toggle maintenance mode.\n` +
@@ -645,7 +644,7 @@ async function processAdminCommand(message) {
     );
     return;
   }
-  // Existing commands (view, approve/reject, ban, add/deduct, unban)...
+  // (All previously defined admin commands from our code are included here.)
   if (cmd === 'view' && subCmd === 'users') {
     let list = Object.values(users).map(u => `${u.firstName} ${u.secondName} (Phone: ${u.phone})`).join('\n');
     if (!list) list = "No users registered.";
@@ -654,22 +653,14 @@ async function processAdminCommand(message) {
   }
   if (cmd === 'view' && subCmd === 'investments') {
     let invList = "";
-    Object.values(users).forEach(u => {
-      u.investments.forEach((inv, i) => {
-        invList += `${u.firstName} ${u.secondName} – Investment ${i+1}: Ksh ${inv.amount}, Return: Ksh ${inv.expectedReturn}, Status: ${inv.status}${inv.matured ? " (Matured)" : ""}\n`;
-      });
-    });
+    Object.values(users).forEach(u => { u.investments.forEach((inv, i) => { invList += `${u.firstName} ${u.secondName} – Investment ${i+1}: Ksh ${inv.amount}, Return: Ksh ${inv.expectedReturn}, Status: ${inv.status}${inv.matured ? " (Matured)" : ""}\n`; }); });
     if (!invList) invList = "No investments found.";
     await message.reply(`📊 *Investments:*\n\n${invList}\n[${getKenyaTime()}]`);
     return;
   }
   if (cmd === 'view' && subCmd === 'deposits') {
     let depList = "";
-    Object.values(users).forEach(u => {
-      u.deposits.forEach((dep, i) => {
-        depList += `${u.firstName} ${u.secondName} – Deposit ${i+1}: ID: ${dep.depositID}, Amount: Ksh ${dep.amount}, Status: ${dep.status}\n`;
-      });
-    });
+    Object.values(users).forEach(u => { u.deposits.forEach((dep, i) => { depList += `${u.firstName} ${u.secondName} – Deposit ${i+1}: ID: ${dep.depositID}, Amount: Ksh ${dep.amount}, Status: ${dep.status}\n`; }); });
     if (!depList) depList = "No deposits found.";
     await message.reply(`💰 *Deposits:*\n\n${depList}\n[${getKenyaTime()}]`);
     return;
@@ -678,11 +669,7 @@ async function processAdminCommand(message) {
     const depID = parts[3];
     if (!depID) { await message.reply("Usage: admin approve deposit <DEP-ID>"); return; }
     let found = false;
-    Object.values(users).forEach(u => {
-      u.deposits.forEach(dep => {
-        if (dep.depositID.toLowerCase() === depID.toLowerCase()) { dep.status = 'approved'; u.accountBalance += parseFloat(dep.amount); found = true; }
-      });
-    });
+    Object.values(users).forEach(u => { u.deposits.forEach(dep => { if (dep.depositID.toLowerCase() === depID.toLowerCase()) { dep.status = 'approved'; u.accountBalance += parseFloat(dep.amount); found = true; } }); });
     if (found) { saveUsers(); await message.reply(`✅ Deposit ${depID} approved!\n[${getKenyaTime()}]`); }
     else await message.reply(`❌ Deposit ID not found: ${depID}`);
     return;
@@ -692,11 +679,7 @@ async function processAdminCommand(message) {
     if (!depID) { await message.reply("Usage: admin reject deposit <DEP-ID> <Reason>"); return; }
     const reason = parts.slice(4).join(' ') || "No reason given";
     let found = false;
-    Object.values(users).forEach(u => {
-      u.deposits.forEach(dep => {
-        if (dep.depositID.toLowerCase() === depID.toLowerCase()) { dep.status = `rejected (${reason})`; found = true; }
-      });
-    });
+    Object.values(users).forEach(u => { u.deposits.forEach(dep => { if (dep.depositID.toLowerCase() === depID.toLowerCase()) { dep.status = `rejected (${reason})`; found = true; } }); });
     if (found) { saveUsers(); await message.reply(`❌ Deposit ${depID} rejected.\nReason: ${reason}\n[${getKenyaTime()}]`); }
     else await message.reply(`Deposit ID not found: ${depID}`);
     return;
@@ -705,11 +688,7 @@ async function processAdminCommand(message) {
     const wdID = parts[3];
     if (!wdID) { await message.reply("Usage: admin approve withdrawal <WD-ID>"); return; }
     let found = false;
-    Object.values(users).forEach(u => {
-      u.withdrawals.forEach(wd => {
-        if (wd.withdrawalID.toLowerCase() === wdID.toLowerCase()) { wd.status = 'approved'; found = true; }
-      });
-    });
+    Object.values(users).forEach(u => { u.withdrawals.forEach(wd => { if (wd.withdrawalID.toLowerCase() === wdID.toLowerCase()) { wd.status = 'approved'; found = true; } }); });
     if (found) { saveUsers(); await message.reply(`✅ Withdrawal ${wdID} approved!\n[${getKenyaTime()}]`); }
     else await message.reply(`❌ Withdrawal ID not found: ${wdID}`);
     return;
@@ -719,11 +698,7 @@ async function processAdminCommand(message) {
     if (!wdID) { await message.reply("Usage: admin reject withdrawal <WD-ID> <Reason>"); return; }
     const reason = parts.slice(4).join(' ') || "No reason given";
     let found = false;
-    Object.values(users).forEach(u => {
-      u.withdrawals.forEach(wd => {
-        if (wd.withdrawalID.toLowerCase() === wdID.toLowerCase()) { wd.status = `rejected (${reason})`; found = true; }
-      });
-    });
+    Object.values(users).forEach(u => { u.withdrawals.forEach(wd => { if (wd.withdrawalID.toLowerCase() === wdID.toLowerCase()) { wd.status = `rejected (${reason})`; found = true; } }); });
     if (found) { saveUsers(); await message.reply(`❌ Withdrawal ${wdID} rejected.\nReason: ${reason}\n[${getKenyaTime()}]`); }
     else await message.reply(`Withdrawal ID not found: ${wdID}`);
     return;
@@ -741,7 +716,7 @@ async function processAdminCommand(message) {
     return;
   }
   if (cmd === 'add' && subCmd === 'admin') {
-    if (chatId.replace(/\D/g, '') !== SUPER_ADMIN) { await message.reply("🚫 Only the Super Admin can add new admins."); return; }
+    if (message.from.replace(/\D/g, '') !== SUPER_ADMIN) { await message.reply("🚫 Only the Super Admin can add new admins."); return; }
     let newPhone = parts[3]?.replace(/\D/g, '');
     if (!newPhone) { await message.reply("Usage: admin add admin <phone>"); return; }
     if (!admins.includes(newPhone)) { admins.push(newPhone); await message.reply(`✅ ${newPhone} added as admin.`); }
@@ -787,14 +762,14 @@ async function processAdminCommand(message) {
     let min = parseFloat(parts[2]), max = parseFloat(parts[3]);
     if (isNaN(min) || isNaN(max)) { await message.reply("Usage: admin setwithdrawallimits <min> <max>"); return; }
     withdrawalMin = min; withdrawalMax = max;
-    await message.reply(`✅ Withdrawal limits set to: Min Ksh ${withdrawalMin}, Max Ksh ${withdrawalMax}.\n[${getKenyaTime()}]`);
+    await message.reply(`✅ Withdrawal limits set: Min Ksh ${withdrawalMin}, Max Ksh ${withdrawalMax}.\n[${getKenyaTime()}]`);
     return;
   }
   if (cmd === 'setdepositlimits') {
     let min = parseFloat(parts[2]), max = parseFloat(parts[3]);
     if (isNaN(min) || isNaN(max)) { await message.reply("Usage: admin setdepositlimits <min> <max>"); return; }
     depositMin = min; depositMax = max;
-    await message.reply(`✅ Deposit limits set to: Min Ksh ${depositMin}, Max Ksh ${depositMax}.\n[${getKenyaTime()}]`);
+    await message.reply(`✅ Deposit limits set: Min Ksh ${depositMin}, Max Ksh ${depositMax}.\n[${getKenyaTime()}]`);
     return;
   }
   if (cmd === 'setdepositinfo') {
@@ -831,12 +806,12 @@ async function processAdminCommand(message) {
     if (!phone || isNaN(index)) { await message.reply("Usage: admin cancelinvestment <phone> <investment_index>"); return; }
     if (!users[phone]) { await message.reply(`User with phone ${phone} not found.`); return; }
     let inv = users[phone].investments[index];
-    if (!inv) { await message.reply(`No investment at index ${index+1} for ${phone}.`); return; }
+    if (!inv) { await message.reply(`No investment found at index ${index+1} for ${phone}.`); return; }
     if (inv.matured) { await message.reply("Cannot cancel a matured investment."); return; }
     users[phone].accountBalance += inv.amount;
     inv.status = 'cancelled';
     saveUsers();
-    await message.reply(`✅ Investment #${index+1} for ${phone} cancelled and refunded.\n[${getKenyaTime()}]`);
+    await message.reply(`✅ Investment #${index+1} for ${phone} cancelled and amount refunded.\n[${getKenyaTime()}]`);
     try { await client.sendMessage(users[phone].whatsAppId, `⚠️ Your investment of Ksh ${inv.amount} has been cancelled and refunded.`); }
     catch (err) { console.error(err); }
     return;
@@ -859,9 +834,7 @@ async function processAdminCommand(message) {
   if (cmd === 'sendreminder') {
     let reminder = parts.slice(2).join(' ');
     if (!reminder) { await message.reply("Usage: admin sendreminder <message>"); return; }
-    Object.values(users).forEach(u => {
-      client.sendMessage(u.whatsAppId, `🔔 Reminder: ${reminder}\n[${getKenyaTime()}]`);
-    });
+    Object.values(users).forEach(u => { client.sendMessage(u.whatsAppId, `🔔 Reminder: ${reminder}\n[${getKenyaTime()}]`); });
     await message.reply(`✅ Reminder sent to all users.\n[${getKenyaTime()}]`);
     return;
   }
@@ -942,6 +915,37 @@ function mainMenuText() {
     `Tip: Type "0" to go back or "00" to return to this menu anytime!`
   );
 }
+
+// ---------------------------
+// POLL PENDING DEPOSITS VIA API (Automatic Integration)
+// ---------------------------
+async function pollPendingDeposits() {
+  // Loop through all users and their deposits with status "under review"
+  for (const phone in users) {
+    let user = users[phone];
+    for (let dep of user.deposits) {
+      if (dep.status === 'under review') {
+        try {
+          // Call the external API (replace URL with your actual API endpoint)
+          const response = await axios.get(`${DEPOSIT_STATUS_API}?depositId=${dep.depositID}`);
+          // Assume response.data.status returns "confirmed" or "rejected"
+          if (response.data.status === 'confirmed') {
+            dep.status = 'confirmed';
+            user.accountBalance += parseFloat(dep.amount);
+            console.log(`Deposit ${dep.depositID} confirmed via API. Added Ksh ${dep.amount} to user ${user.phone}`);
+          } else if (response.data.status === 'rejected') {
+            dep.status = 'rejected';
+          }
+        } catch (err) {
+          console.error(`Error checking deposit ${dep.depositID}:`, err.message);
+        }
+      }
+    }
+  }
+  saveUsers();
+}
+// Poll every 60 seconds
+setInterval(pollPendingDeposits, 60000);
 
 // ---------------------------
 // START THE WHATSAPP CLIENT
