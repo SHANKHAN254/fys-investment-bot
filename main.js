@@ -278,12 +278,12 @@ async function handleRegistration(message, session) {
       break;
     }
     case 'awaiting_phone':
-      if (!/^(07|01)\d{7}$/.test(msgBody)) {
-        await message.reply(`❌ Invalid format. Your number must start with 07 or 01 and be exactly 10 digits.\nRe-enter your phone number.`);
-      } else {
-        session.phone = msgBody;
-        await message.reply(`Now, create a *4-digit PIN* for withdrawals (from referral earnings).`);
-        session.state = 'awaiting_withdrawal_pin';
+      if (!/^(07|01)[0-9]{8}$/.test(msgBody)) {
+    await message.reply(`❌ Invalid format. Your number must start with 07 or 01 and be exactly 10 digits.\nRe-enter your phone number.`);
+} else {
+    session.phone = msgBody;
+    await message.reply(`Now, create a *4-digit PIN* for withdrawals (from referral earnings).`);
+    session.state = 'awaiting_withdrawal_pin';
       }
       break;
     case 'awaiting_withdrawal_pin':
